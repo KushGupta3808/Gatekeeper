@@ -1,8 +1,12 @@
 """
-GateKeeper - Stage 1: Single-process gateway with naive rate limiting.
+GateKeeper - Stage 3: Gateway with swappable rate-limiting algorithm.
 
 Run with:
     uvicorn app.main:app --reload --port 8000
+
+Swap the algorithm via env var (default: token_bucket):
+    RATE_LIMIT_ALGORITHM=sliding_window_log uvicorn app.main:app --port 8000
+    RATE_LIMIT_ALGORITHM=sliding_window_counter uvicorn app.main:app --port 8000
 
 Test with:
     curl "http://localhost:8000/api/data?client_id=kush"
@@ -10,13 +14,11 @@ Test with:
 
 from fastapi import FastAPI, HTTPException, Query
 
-from app.rate_limiter_naive import NaiveRateLimiter
+from app.config import build_limiter, ALGORITHM
 
-app = FastAPI(title="GateKeeper - Stage 1 (Naive)")
+app = FastAPI(title=f"GateKeeper - Stage 3 ({ALGORITHM})")
 
-# One shared limiter instance for this process.
-# capacity=5, refill_rate=1 -> allows a burst of 5, then 1 request/sec after.
-limiter = NaiveRateLimiter(capacity=5, refill_rate=1.0)
+limiter = build_limiter()
 
 
 @app.get("/api/data")
