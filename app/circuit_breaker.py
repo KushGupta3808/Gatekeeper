@@ -80,7 +80,7 @@ class CircuitBreaker:
 
         if self.state == CircuitState.OPEN:
             raise CircuitBreakerOpenError(
-                "Circuit is OPEN - backend considered unhealthy, rejecting without calling it"
+                "Circuit is OPEN - backend considered unhealthy, rejecting without calling"
             )
 
         try:
