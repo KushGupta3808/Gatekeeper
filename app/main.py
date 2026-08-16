@@ -17,14 +17,19 @@ Usage:
             -H "Authorization: Bearer <token from step 1>"
 """
 
+import time
+
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.responses import Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app.auth import create_token, get_client_id_from_header
 from app.backend_client import call_backend, set_backend_healthy
 from app.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
 from app.config import build_limiter, ALGORITHM
+from app.metrics import circuit_breaker_open, request_duration_seconds, requests_total
 
-app = FastAPI(title=f"GateKeeper - Stage 5 ({ALGORITHM}, JWT auth, circuit breaker)")
+app = FastAPI(title=f"GateKeeper - Stage 6 ({ALGORITHM}, JWT auth, circuit breaker, metrics)")
 
 limiter = build_limiter()
 breaker = CircuitBreaker(failure_threshold=3, recovery_timeout=10.0)
@@ -46,11 +51,16 @@ def issue_token(client_id: str = Query(..., description="Who this token identifi
 def get_data(client_id: str = Depends(get_client_id_from_header)):
     """
     Protected endpoint. client_id comes from a verified JWT (Stage 4).
-    Now also routes the actual backend call through the circuit
-    breaker (Stage 5): if the backend has been failing, requests get
-    rejected instantly with 503 instead of hanging on a doomed call.
+    Backend call routed through the circuit breaker (Stage 5).
+    Now also instrumented (Stage 6): every outcome increments a
+    labeled counter, every call's duration feeds the latency
+    histogram, and the breaker's open/closed state updates a gauge.
     """
+    start_time = time.monotonic()
+
     if not limiter.is_allowed(client_id):
+        requests_total.labels(outcome="rate_limited").inc()
+        request_duration_seconds.observe(time.monotonic() - start_time)
         raise HTTPException(
             status_code=429,
             detail="Rate limit exceeded. Slow down.",
@@ -59,14 +69,32 @@ def get_data(client_id: str = Depends(get_client_id_from_header)):
     try:
         result = breaker.call(call_backend, client_id)
     except CircuitBreakerOpenError:
+        circuit_breaker_open.set(1)
+        requests_total.labels(outcome="circuit_open").inc()
+        request_duration_seconds.observe(time.monotonic() - start_time)
         raise HTTPException(
             status_code=503,
             detail="Backend unavailable (circuit breaker open) - not even attempting the call.",
         )
     except Exception:
+        circuit_breaker_open.set(1 if breaker.state.value == "open" else 0)
+        requests_total.labels(outcome="backend_error").inc()
+        request_duration_seconds.observe(time.monotonic() - start_time)
         raise HTTPException(status_code=502, detail="Backend call failed")
 
+    circuit_breaker_open.set(0)
+    requests_total.labels(outcome="allowed").inc()
+    request_duration_seconds.observe(time.monotonic() - start_time)
     return {**result, "message": "request allowed"}
+
+
+@app.get("/metrics")
+def metrics():
+    """
+    The endpoint Prometheus will periodically 'pull' from. Returns all
+    current metric values in Prometheus's plain-text exposition format.
+    """
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.post("/admin/backend/{status}")
