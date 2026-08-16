@@ -1,0 +1,16 @@
+# Prometheus scrape configuration.
+#
+# This tells Prometheus WHERE to look for metrics and HOW OFTEN - it's
+# the "nurse's rounds schedule," in the earlier analogy.
+
+global:
+  scrape_interval: 5s   # how often Prometheus "visits" each target
+
+scrape_configs:
+  - job_name: "gatekeeper"
+    static_configs:
+      # host.docker.internal lets the Prometheus container reach a
+      # gateway process running on your actual machine (outside Docker).
+      # If you run the gateway INSIDE Docker Compose too, use the
+      # service name instead (see docker-compose.yml comments).
+      - targets: ["host.docker.internal:8000"]
