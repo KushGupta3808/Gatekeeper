@@ -1,0 +1,25 @@
+# Runs Prometheus (metric storage + scraping) and Grafana (dashboards)
+# locally. Your GateKeeper gateway itself still runs separately via
+# `uvicorn` on your machine, not inside this compose file - Prometheus
+# reaches it via host.docker.internal (see prometheus.yml).
+#
+# Run with:  docker compose up
+# Prometheus UI: http://localhost:9090
+# Grafana UI:    http://localhost:3000  (default login: admin / admin)
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
