@@ -2,3 +2,4 @@ fastapi==0.141.1
 uvicorn==0.52.1
 redis==8.1.0
 pyjwt==2.13.0
+prometheus-client==0.26.0
